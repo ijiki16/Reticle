@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @State private var camera = CameraModel()
+    @State private var detection = DetectionController()
     @State private var conditions = DeviceConditions()
     @State private var benchmark = BenchmarkModel()
     @State private var showBenchmark = LaunchOptions.autorunBenchmark
@@ -12,8 +13,10 @@ struct RootView: View {
             Color.black.ignoresSafeArea()
             CameraPreview(source: camera.camera.previewSession)
                 .ignoresSafeArea()
+            BoxOverlay(controller: detection.overlay)
+                .ignoresSafeArea()
             CameraMessage(state: camera.state, retry: camera.start)
-            StatsHUD(rates: camera.rates, conditions: conditions)
+            StatsHUD(rates: camera.rates, detection: detection, conditions: conditions)
         }
         .overlay(alignment: .topTrailing) {
             Button {
@@ -33,12 +36,22 @@ struct RootView: View {
         .preferredColorScheme(.dark)
         .task { await camera.observeState() }
         .task { await camera.pollStats() }
+        .task { await detection.pollStats() }
+        .task {
+            // An automatic benchmark run must not compete with the detector for the Neural Engine.
+            if !LaunchOptions.autorunBenchmark {
+                await detection.load(into: camera.sink)
+            }
+        }
         .onChange(of: scenePhase, initial: true) { _, _ in updateCameraRunning() }
         // The benchmark needs the Neural Engine and CPU to itself, so the camera pauses behind it.
         .onChange(of: showBenchmark) { _, _ in updateCameraRunning() }
         .onChange(of: camera.state) { _, state in
             // Keep the screen awake only while the camera is running.
             UIApplication.shared.isIdleTimerDisabled = state == .running
+            if state != .running {
+                detection.overlay.clear()
+            }
         }
     }
 
@@ -53,14 +66,15 @@ struct RootView: View {
 
 private struct StatsHUD: View {
     let rates: FrameStats.Rates
+    let detection: DetectionController
     let conditions: DeviceConditions
 
     var body: some View {
         VStack {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(rates.framesPerSecond, format: .number.precision(.fractionLength(0))) fps")
-                    Text("\(rates.dropsPerSecond, format: .number.precision(.fractionLength(0))) dropped/s")
+                    Text(String(format: "%.0f fps  %.0f late/s", rates.framesPerSecond, rates.dropsPerSecond))
+                    detectionLines
                     Text("Thermal: \(conditions.thermalState.name)")
                         .foregroundStyle(conditions.thermalState.color)
                     if conditions.isLowPowerMode {
@@ -76,6 +90,27 @@ private struct StatsHUD: View {
             Spacer()
         }
         .padding()
+    }
+
+    @ViewBuilder
+    private var detectionLines: some View {
+        switch detection.state {
+        case .loading:
+            Text("Loading model...")
+        case .failed(let message):
+            Text(message)
+                .foregroundStyle(.red)
+                .frame(maxWidth: 260, alignment: .leading)
+        case .ready(let modelName):
+            let averages = detection.averages
+            Text(modelName)
+            Text(String(format: "pre %.1f  pred %.1f  post %.1f ms", averages.preprocess, averages.predict, averages.postprocess))
+            Text(String(format: "e2e %.0f ms  %.0f objects", averages.endToEnd, averages.detections))
+            if averages.busyDropsPerSecond >= 0.5 {
+                Text(String(format: "%.0f busy drops/s", averages.busyDropsPerSecond))
+                    .foregroundStyle(.yellow)
+            }
+        }
     }
 }
 

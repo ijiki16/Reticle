@@ -16,10 +16,14 @@ struct CameraConfiguration: Sendable {
     var width: Int32 = 1280
     var height: Int32 = 720
     var framesPerSecond: Int32 = 30
-    /// `420v` is the sensor's native format, so the ISP has nothing to convert. Switch to
-    /// `kCVPixelFormatType_32BGRA` if Core ML rejects YUV input in the spike.
-    var pixelFormat: OSType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+    /// What the video output delivers. Core ML image inputs take BGRA, so the ISP converts from the
+    /// sensor's YUV. (Vision would accept YUV and skip that conversion.)
+    var pixelFormat: OSType = kCVPixelFormatType_32BGRA
 }
+
+/// Receives each camera frame with its capture time on the `CACurrentMediaTime()` clock. Called on
+/// the camera's frame queue, so it must be quick.
+typealias FrameHandler = @Sendable (CVPixelBuffer, TimeInterval) -> Void
 
 /// Lets the main thread give the capture session to `AVCaptureVideoPreviewLayer`, which is the
 /// only thing it may do with it. The session is configured and started solely by `CameraSession`.
@@ -51,7 +55,7 @@ actor CameraSession {
         executor.asUnownedSerialExecutor()
     }
 
-    init(configuration: CameraConfiguration = CameraConfiguration()) {
+    init(configuration: CameraConfiguration = CameraConfiguration(), frameHandler: FrameHandler? = nil) {
         let stats = FrameStats(now: ProcessInfo.processInfo.systemUptime)
         let (states, continuation) = AsyncStream.makeStream(of: CameraState.self, bufferingPolicy: .bufferingNewest(1))
         let session = AVCaptureSession()
@@ -61,7 +65,7 @@ actor CameraSession {
         self.stats = stats
         self.states = states
         self.stateContinuation = continuation
-        self.receiver = FrameReceiver(stats: stats)
+        self.receiver = FrameReceiver(stats: stats, handler: frameHandler)
     }
 
     func start() async {
@@ -184,13 +188,16 @@ actor CameraSession {
     }
 
     /// Prefers a non-HDR, binned format: binning is cheaper for the sensor and the ISP.
+    ///
+    /// Sensor formats are always YUV, so this looks for video-range `420v` whatever `pixelFormat`
+    /// is; `pixelFormat` only says what the output converts to.
     private static func bestFormat(for device: AVCaptureDevice, matching c: CameraConfiguration) -> AVCaptureDevice.Format? {
         let matches = device.formats.filter { format in
             let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
             let fps = Double(c.framesPerSecond)
             return size.width == c.width
                 && size.height == c.height
-                && CMFormatDescriptionGetMediaSubType(format.formatDescription) == c.pixelFormat
+                && CMFormatDescriptionGetMediaSubType(format.formatDescription) == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
                 && format.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= fps && fps <= $0.maxFrameRate }
         }
         return matches.first { !$0.isVideoHDRSupported && $0.isVideoBinned }
@@ -216,18 +223,22 @@ actor CameraSession {
     }
 }
 
-/// Receives frames on the capture queue. For now it only counts them; this is where a frame will
-/// be handed to the inference pipeline.
+/// Receives frames on the capture queue, counts them and hands each one to the frame handler.
 private final class FrameReceiver: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     private let stats: FrameStats
+    private let handler: FrameHandler?
 
-    init(stats: FrameStats) {
+    init(stats: FrameStats, handler: FrameHandler?) {
         self.stats = stats
+        self.handler = handler
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         stats.recordFrame()
         Signposts.pipeline.emitEvent("frame")
+        if let handler, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            handler(pixelBuffer, CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds)
+        }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {

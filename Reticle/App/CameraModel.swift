@@ -8,7 +8,16 @@ final class CameraModel {
     private(set) var state = CameraState.idle
     private(set) var rates = FrameStats.Rates.zero
 
-    @ObservationIgnored let camera = CameraSession()
+    /// Where the camera sends frames. Give it a pipeline to start detecting.
+    @ObservationIgnored let sink = FrameSink()
+    @ObservationIgnored let camera: CameraSession
+
+    init() {
+        let sink = sink
+        camera = CameraSession { frame, capturedAt in
+            sink.submit(frame, capturedAt: capturedAt)
+        }
+    }
 
     func start() {
         Task { await camera.start() }
@@ -32,6 +41,10 @@ final class CameraModel {
                 return
             }
             rates = camera.stats.takeRates(at: ProcessInfo.processInfo.systemUptime)
+            if LaunchOptions.logStats {
+                print(String(format: "camera fps=%.1f late-drops/s=%.1f", rates.framesPerSecond, rates.dropsPerSecond))
+                fflush(stdout)
+            }
         }
     }
 }

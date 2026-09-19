@@ -2,11 +2,6 @@ import Foundation
 import Observation
 import UIKit
 
-enum LaunchOptions {
-    /// Pass `-autorun-benchmark` as a launch argument to open the benchmark and start it at once.
-    static let autorunBenchmark = ProcessInfo.processInfo.arguments.contains("-autorun-benchmark")
-}
-
 @MainActor @Observable
 final class BenchmarkModel {
     private(set) var results: [BenchmarkResult] = []

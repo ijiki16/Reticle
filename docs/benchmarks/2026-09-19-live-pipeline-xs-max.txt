@@ -1,0 +1,18 @@
+Live detection pipeline on the iPhone XS Max (iOS 18.7.8), Release build.
+yolov8n_352x640, .cpuAndNeuralEngine, 2 frames in flight, camera 1280x720 @ 30 fps delivering BGRA portrait frames.
+About 64 s of live camera, 129 windows of 500 ms. Captured with the launch argument -log-stats.
+Thermal state was not logged. There was no drift between the first and last quarter of the run.
+
+                     mean     min     max
+camera fps           30.0    28.6    31.7
+processed / s        30.0    27.6    32.0
+busy drops / s        0.0     0.0     0.0     frames dropped because both slots were busy
+backing misses / s    0.0     0.0     0.0     Core ML wrote into the pre-allocated output array every time
+preprocess ms         4.1     2.7     5.5     vImage letterbox, on the camera queue
+predict ms           14.3    11.5    21.4     with 2 in flight; 10.0 ms with 1 in flight in the isolated benchmark
+postprocess ms        0.5     0.3     0.7     decode + per-class NMS (budget 1.5 ms)
+draw ms               0.3     0.0     0.6     overlay update on the main thread
+end-to-end ms        40.0    38.0    46.0     camera timestamp to boxes drawn (target 100 ms)
+objects per frame     1.8     0.0     4.3
+
+First quarter vs last quarter of the run: preprocess 4.0 -> 4.1 ms, predict 14.8 -> 13.9 ms, end-to-end 40.5 -> 39.4 ms.

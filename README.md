@@ -5,17 +5,32 @@ Real-time object detection for the iPhone XS Max (iOS 18). The full plan is in
 
 ## Where it stands
 
-This is the requirements' section 7 spike ("spike first, let the numbers pick the model"). There is a
-camera pipeline and an on-device Core ML benchmark, and no detector yet. What is in place:
+The camera pipeline, the on-device Core ML benchmark and the detector are in place. What the app does:
 
-- **Camera** (section 4): explicit 1280x720 format, locked frame rate, native `420v` pixels, video HDR and
-  stabilization off, late frames dropped, portrait buffers, and graceful handling of denied, restricted,
-  missing and interrupted cameras.
-- **Preview** (section 5): `AVCaptureVideoPreviewLayer`, so no CPU copy for display.
-- **Stats HUD** (sections 5 and 6): frames and drops per second, thermal state and Low Power Mode, refreshed at 2 Hz.
-- **Signposts** (section 7): a `frame` event per delivered frame, ready for Instruments.
+- **Camera** (section 4): explicit 1280x720 format, locked frame rate, video HDR and stabilization off,
+  late frames dropped, upright portrait BGRA frames, and graceful handling of denied, restricted, missing
+  and interrupted cameras.
+- **Detector** (sections 2 and 3): YOLOv8n at 352x640 on `.cpuAndNeuralEngine`. Each frame takes one of two
+  preallocated slots (letterbox with vImage, async Core ML prediction into a pre-allocated output array,
+  decode, per-class NMS); when both are busy the frame is dropped, never queued. The loader checks the
+  model's shapes and class count and refuses a mismatched model.
+- **Overlay** (section 5): boxes drawn by a pool of reused layers with implicit animations off, mapped to
+  the screen with an aspect-fill transform that is unit tested.
+- **HUD** (sections 5 and 6): fps, per-stage timings, end-to-end latency, thermal state and Low Power Mode,
+  refreshed at 2 Hz.
+- **Signposts** (section 7): `preprocess`, `predict` and `decode` intervals plus a `frame` event, for Instruments.
 - **Scheme "Reticle Benchmark"**: runs the app as a Release build. Use it for every performance number.
 - **Core ML benchmark** (section 7, the speedometer button): see below.
+
+Live on the XS Max the detector keeps up with the 30 fps camera with no drops, in about 4 ms of
+preprocessing, 14 ms of prediction and 0.5 ms of decoding, and 40 ms from camera to boxes drawn. Numbers
+are in [docs/benchmarks/2026-09-19-live-pipeline-xs-max.txt](docs/benchmarks/2026-09-19-live-pipeline-xs-max.txt).
+To watch them from a Mac, launch with `-log-stats`:
+
+```sh
+xcrun devicectl device process launch --device <id> --console --terminate-existing \
+  ge.iurijikidze.Reticle -- -log-stats
+```
 
 ## Benchmark
 
@@ -62,32 +77,50 @@ The name under the home-screen icon is `INFOPLIST_KEY_CFBundleDisplayName` in `p
 | --- | --- |
 | `Reticle/App` | App entry point, root view, the model that bridges the camera to SwiftUI |
 | `Reticle/Camera` | `CameraSession` (capture actor) and `CameraPreview` |
-| `Reticle/Support` | Frame statistics, thermal and power state, signposts |
+| `Reticle/Detection` | Model loader, letterbox preprocessing, decoder, NMS, the pipeline and its statistics |
+| `Reticle/Overlay` | Box overlay view and the aspect-fill mapping |
+| `Reticle/Support` | Frame statistics, thermal and power state, signposts, launch options |
 | `Reticle/Benchmark` | On-device Core ML benchmark: runner, compute-plan summary, report, UI |
 | `Reticle/Models` | Exported Core ML models (git-ignored) |
 | `Tools` | `export_models.py`, which produces the benchmark models |
 | `ReticleTests` | Unit tests (Swift Testing) |
 | `Config` | Signing settings; your team lives in the git-ignored `Local.xcconfig` |
 
+## Why this model and these settings
+
+From the Core ML benchmark on the XS Max (raw numbers in
+[docs/benchmarks/2026-09-19-iphone-xs-max.txt](docs/benchmarks/2026-09-19-iphone-xs-max.txt)):
+
+- **`.cpuAndNeuralEngine`.** The CPU-only control is 3.7x (yolov8n) to 8.5x (yolov8s) slower at 352x640, so the
+  Neural Engine is doing the work. `.all` is 2.6-4x slower and no better than CPU-only at 352x640, because
+  it sends the detection head to the GPU.
+- **352x640 input.** yolov8n takes 15.5 ms at 640x640, 10.0 ms at 352x640 and 7.1 ms at 224x416, so going
+  smaller than 352x640 saves little.
+- **YOLOv8 over YOLO11.** 10.0 vs 12.8 ms (n) and 13.9 vs 17.0 ms (s) at 352x640, and Core ML plans more
+  YOLO11 operators off the Neural Engine. Both n and s fit a 33 ms frame; they share one decoder.
+- **Two frames in flight.** Two raised yolov8n throughput from 100 to 140 fps; a third only helped the tiny
+  models and hurt the s models.
+- **Output is float32.** The model computes in fp16, but Core ML casts its output tensor to float32, and the
+  decoder reads that.
+
+## Tests
+
+`ReticleTests` runs on the simulator. Besides the unit tests for the letterbox, decoder, NMS, slot pool,
+statistics and mapping, a golden-image test runs the real model on `bus.jpg` and checks the detections
+against a plain-numpy decode of the same model (`bus_reference.json`, IoU above 0.85 and scores within
+0.08). Another test renders the overlay over the photo to a PNG; set `RETICLE_SNAPSHOT_DIR` to choose
+where it goes.
+
 ## Next steps
 
-1. **Spike result** (iPhone XS Max, iOS 18.7.8, Release; raw numbers in
-   [docs/benchmarks/2026-09-19-iphone-xs-max.txt](docs/benchmarks/2026-09-19-iphone-xs-max.txt)):
-   - Use `.cpuAndNeuralEngine`. The CPU-only control is 3.7x (yolov8n) to 8.5x (yolov8s) slower at
-     352x640, so the Neural Engine is doing the work. `.all` is 2.6-4x slower than `.cpuAndNeuralEngine`
-     and no better than CPU-only at 352x640: it sends the detection head to the GPU.
-   - Input 352x640 is the sweet spot. yolov8n takes 15.5 ms at 640x640, 10.0 ms at 352x640 and 7.1 ms
-     at 224x416, so going smaller than 352x640 saves little.
-   - YOLOv8 beats YOLO11 on this phone: 10.0 vs 12.8 ms (n) and 13.9 vs 17.0 ms (s) at 352x640, and Core ML
-     plans more operators off the Neural Engine for YOLO11.
-   - Both the n and s models fit a 33 ms frame at 30 fps. The decoder is the same for both (`[1, 84, 4620]`).
-
-   Still open: accuracy (not measured), whether the Neural Engine is confirmed in Instruments, a 15-minute
-   thermal run at 30 fps, and the TFLite baseline.
-2. **Input orientation:** the camera delivers upright portrait buffers (720x1280). For a detector that
-   means a portrait input such as 352x640, not the 640x352 the requirements mention for landscape frames.
-   Benchmark that shape, or keep landscape frames and pass the orientation to Vision instead.
-3. Model-specific decoder and per-class NMS, with unit tests.
-4. Pipeline with 2-3 frames in flight, dropping the newest when all slots are busy.
-5. Box overlay from a pool of reused layers, mapped with `layerRectConverted(fromMetadataOutputRect:)`.
-6. Thermal step-down (frame rate, then detection frequency, then a smaller model).
+1. **Still open from the spike** (results in
+   [docs/benchmarks/2026-09-19-iphone-xs-max.txt](docs/benchmarks/2026-09-19-iphone-xs-max.txt)): accuracy
+   at different sizes and models, confirming the Neural Engine in Instruments' Core ML template, and the
+   TFLite baseline.
+2. **15-minute thermal run** at 30 fps (requirements, section 6): sustained detection without staying at
+   Serious, and steady memory.
+3. **Thermal step-down** (frame rate, then detection frequency, then a smaller model), driven by
+   `DeviceConditions`.
+4. **Cheaper preprocessing.** vImage takes about 4 ms per frame on the A12, the biggest CPU cost. Asking the
+   camera output to scale frames in the ISP (through `videoSettings`) would move that work to hardware.
+5. **Input orientation** is settled: the camera delivers upright portrait frames and the model takes 352x640.
