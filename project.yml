@@ -1,0 +1,81 @@
+name: Reticle
+
+options:
+  bundleIdPrefix: ge.iurijikidze
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+# Team and bundle identifier come from Config/Signing.xcconfig (+ the git-ignored Local.xcconfig).
+configFiles:
+  Debug: Config/Signing.xcconfig
+  Release: Config/Signing.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+  configs:
+    Debug:
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_COMPILATION_MODE: wholemodule
+
+# XcodeGen sets a per-target device family that wins over project-level settings,
+# so these have to be applied to each target.
+settingGroups:
+  iPhoneOnly:
+    TARGETED_DEVICE_FAMILY: "1"
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+
+targets:
+  Reticle:
+    type: application
+    platform: iOS
+    sources:
+      - path: Reticle
+    settings:
+      groups: [iPhoneOnly]
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # The name shown under the icon. Change it here (and only here) to rebrand the app.
+        INFOPLIST_KEY_CFBundleDisplayName: Reticle
+        INFOPLIST_KEY_NSCameraUsageDescription: Reticle uses the camera to detect objects in real time. Frames are processed on the device and are never stored or uploaded.
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UIRequiredDeviceCapabilities: "arm64"
+    scheme:
+      testTargets:
+        - ReticleTests
+      gatherCoverageData: false
+
+  ReticleTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ReticleTests
+    dependencies:
+      - target: Reticle
+    settings:
+      groups: [iPhoneOnly]
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  # Same app, but built with optimizations. Debug builds distort every CPU-side number
+  # (requirements section 7), so use this scheme for any benchmarking or profiling.
+  Reticle Benchmark:
+    build:
+      targets:
+        Reticle: all
+    run:
+      config: Release
+    profile:
+      config: Release
