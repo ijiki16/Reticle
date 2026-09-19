@@ -21,3 +21,6 @@ Config/Local.xcconfig
 # of git until the licence decision is made (docs/REQUIREMENTS.md, open decision 2).
 Reticle/Models/
 *.pt
+
+# Cached COCO images and models for Tools/evaluate_accuracy.py
+Tools/.cache/

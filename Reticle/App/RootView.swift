@@ -5,6 +5,7 @@ struct RootView: View {
     @State private var detection = DetectionController()
     @State private var conditions = DeviceConditions()
     @State private var benchmark = BenchmarkModel()
+    @State private var statsLog = StatsLog()
     @State private var showBenchmark = LaunchOptions.autorunBenchmark
     @Environment(\.scenePhase) private var scenePhase
 
@@ -37,6 +38,7 @@ struct RootView: View {
         .task { await camera.observeState() }
         .task { await camera.pollStats() }
         .task { await detection.pollStats() }
+        .task { await statsLog.run(camera: camera, detection: detection, conditions: conditions) }
         .task {
             // An automatic benchmark run must not compete with the detector for the Neural Engine.
             if !LaunchOptions.autorunBenchmark {

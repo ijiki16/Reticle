@@ -36,8 +36,9 @@ final class DetectionController {
     func load(into sink: FrameSink) async {
         state = .loading
         do {
-            guard let url = Bundle.main.url(forResource: Self.modelName, withExtension: "mlmodelc") else {
-                throw ModelMissing(name: Self.modelName)
+            let modelName = LaunchOptions.modelName ?? Self.modelName
+            guard let url = Bundle.main.url(forResource: modelName, withExtension: "mlmodelc") else {
+                throw ModelMissing(name: modelName)
             }
             let model = try await YOLOModel.load(url: url)
             let overlay = overlay
@@ -65,14 +66,6 @@ final class DetectionController {
                 return
             }
             averages = stats.takeAverages(at: ProcessInfo.processInfo.systemUptime)
-            if LaunchOptions.logStats {
-                print(String(
-                    format: "pipeline processed/s=%.1f busy-drops/s=%.1f backing-misses/s=%.1f pre=%.1fms predict=%.1fms post=%.1fms draw=%.1fms e2e=%.0fms objects=%.1f",
-                    averages.processedPerSecond, averages.busyDropsPerSecond, averages.backingMissesPerSecond, averages.preprocess, averages.predict,
-                    averages.postprocess, averages.draw, averages.endToEnd, averages.detections
-                ))
-                fflush(stdout)
-            }
         }
     }
 }

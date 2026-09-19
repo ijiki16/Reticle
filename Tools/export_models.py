@@ -44,6 +44,11 @@ VARIANTS = [
     # The n models finish far inside a 30 fps frame budget, so check how much bigger a model fits.
     ("yolov8s", 640, 352),
     ("yolo11s", 640, 352),
+    # Can a bigger model, or a bigger input, buy accuracy inside the frame budget?
+    ("yolov8m", 640, 352),
+    ("yolo11m", 640, 352),
+    ("yolov8n", 800, 448),
+    ("yolov8s", 800, 448),
 ]
 
 

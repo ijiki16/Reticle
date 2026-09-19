@@ -1,0 +1,21 @@
+status: Done, 7 of 7 cases
+
+Reticle benchmark | iPhone11,6 | Version 18.7.8 (Build 22H352) | Release
+
+model                input    units      load  ne/gpu/cpu      p50      p95   fps@1   fps@2   fps@3   thermal
+yolo11m_352x640      352x640  cpu+ne     3.2s     88/0/12   38.3ms   40.7ms      26      26      26  Nominal>Nominal
+yolo11s_352x640      352x640  cpu+ne     1.8s     82/0/18   17.3ms   17.8ms      58      86      91  Nominal>Nominal
+yolov8m_352x640      352x640  cpu+ne     3.0s     88/0/12   24.1ms   24.9ms      41      48      49  Nominal>Nominal
+yolov8n_352x640      352x640  cpu+ne     1.0s     83/0/17   10.2ms   48.0ms      49     160     160  Nominal>Nominal
+yolov8n_448x800      448x800  cpu+ne     1.1s     85/0/15   13.0ms   13.5ms      77     101     104  Nominal>Nominal
+yolov8s_352x640      352x640  cpu+ne     1.6s     85/0/15   13.9ms   14.3ms      73      90      81  Nominal>Fair
+yolov8s_448x800      448x800  cpu+ne     1.9s     85/0/15   20.2ms   21.2ms      49      58      58  Fair>Fair
+
+Operators planned off the Neural Engine (plan only, confirm in Instruments):
+  yolo11m_352x640: reshape x11, concat x4, mul x4, add x2, cast x2, matmul x2
+  yolo11s_352x640: reshape x11, conv x6, concat x4, mul x4, silu x4, add x2
+  yolov8m_352x640: reshape x8, concat x4, mul x3, add x2, cast x2, sub x2
+  yolov8n_352x640: reshape x8, concat x4, conv x4, mul x3, add x2, cast x2
+  yolov8n_448x800: reshape x8, concat x4, mul x3, add x2, cast x2, sub x2
+  yolov8s_352x640: reshape x8, concat x4, mul x3, add x2, cast x2, sub x2
+  yolov8s_448x800: reshape x8, concat x4, mul x3, add x2, cast x2, sub x2

@@ -41,10 +41,6 @@ final class CameraModel {
                 return
             }
             rates = camera.stats.takeRates(at: ProcessInfo.processInfo.systemUptime)
-            if LaunchOptions.logStats {
-                print(String(format: "camera fps=%.1f late-drops/s=%.1f", rates.framesPerSecond, rates.dropsPerSecond))
-                fflush(stdout)
-            }
         }
     }
 }

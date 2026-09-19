@@ -19,9 +19,12 @@ struct BenchmarkCase: Sendable {
     /// Grouped by compute units in the order above, so the runs we care most about (Neural Engine)
     /// happen first, while the phone is cool. The GPU and CPU runs heat it up the most.
     static func all(in bundle: Bundle) -> [BenchmarkCase] {
+        let filter = LaunchOptions.benchmarkFilter
         let urls = (bundle.urls(forResourcesWithExtension: "mlmodelc", subdirectory: nil) ?? [])
+            .filter { url in filter.isEmpty || filter.contains { url.lastPathComponent.contains($0) } }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        return computeUnits.flatMap { units in urls.map { BenchmarkCase(modelURL: $0, units: units) } }
+        let units = LaunchOptions.benchmarkNeuralEngineOnly ? [MLComputeUnits.cpuAndNeuralEngine] : computeUnits
+        return units.flatMap { units in urls.map { BenchmarkCase(modelURL: $0, units: units) } }
     }
 }
 
