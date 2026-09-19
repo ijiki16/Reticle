@@ -71,9 +71,19 @@ The name under the home-screen icon is `INFOPLIST_KEY_CFBundleDisplayName` in `p
 
 ## Next steps
 
-1. **Finish the spike:** run the benchmark from a cool phone, then confirm on the Neural Engine in
-   Instruments' Core ML template (the compute plan is a plan, not a measurement). Pick the model and
-   input size from the numbers.
+1. **Spike result** (iPhone XS Max, iOS 18.7.8, Release; raw numbers in
+   [docs/benchmarks/2026-09-19-iphone-xs-max.txt](docs/benchmarks/2026-09-19-iphone-xs-max.txt)):
+   - Use `.cpuAndNeuralEngine`. The CPU-only control is 3.7x (yolov8n) to 8.5x (yolov8s) slower at
+     352x640, so the Neural Engine is doing the work. `.all` is 2.6-4x slower than `.cpuAndNeuralEngine`
+     and no better than CPU-only at 352x640: it sends the detection head to the GPU.
+   - Input 352x640 is the sweet spot. yolov8n takes 15.5 ms at 640x640, 10.0 ms at 352x640 and 7.1 ms
+     at 224x416, so going smaller than 352x640 saves little.
+   - YOLOv8 beats YOLO11 on this phone: 10.0 vs 12.8 ms (n) and 13.9 vs 17.0 ms (s) at 352x640, and Core ML
+     plans more operators off the Neural Engine for YOLO11.
+   - Both the n and s models fit a 33 ms frame at 30 fps. The decoder is the same for both (`[1, 84, 4620]`).
+
+   Still open: accuracy (not measured), whether the Neural Engine is confirmed in Instruments, a 15-minute
+   thermal run at 30 fps, and the TFLite baseline.
 2. **Input orientation:** the camera delivers upright portrait buffers (720x1280). For a detector that
    means a portrait input such as 352x640, not the 640x352 the requirements mention for landscape frames.
    Benchmark that shape, or keep landscape frames and pass the orientation to Vision instead.
