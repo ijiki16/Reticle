@@ -127,7 +127,7 @@ Raw data is in `docs/benchmarks/`.
 | --- | --- | --- | --- | --- | --- |
 | yolov8n 352x640 (current) | 35.7 | 14.6 | 10.2 ms | 31% | **Pass**: Nominal the whole time |
 | yolo11n 352x640 | 37.0 | 15.0 | 12.8 ms | 38% | **Pass**: Nominal for 291 s, then Fair; never Serious. 30 fps, no drops |
-| yolov8n 448x800 | 38.4 | 18.1 | 13.0 ms | 39% | not run |
+| yolov8n 448x800 | 38.4 | 18.1 | 13.0 ms | 39% | **Pass**: Nominal for 558 s, then Fair; never Serious in 18 min. 30 fps, no drops |
 | yolov8s 352x640 | 43.5 | 22.3 | 13.9 ms | 42% | **Fail on temperature**: Fair at 117 s, Serious at 418 s and stayed. Speed held: 30 fps, no drops |
 | yolo11s 352x640 | 45.4 | 25.6 | 17.3 ms | 52% | not run |
 | yolov8s 448x800 | 46.9 | 27.6 | 20.2 ms | 61% | not run |
@@ -140,13 +140,16 @@ Raw data is in `docs/benchmarks/`.
   prediction time. yolov8s (42% duty) reached Fair after 2 minutes and Serious after 7, and stayed there for
   the rest of a 16-minute run, but its speed did not suffer: 22 ms prediction and 30 fps in every thermal
   state, no dropped frames. yolov8m (72% duty) reached Serious after 100 s and did get throttled (prediction
-  27 to 31 ms). yolo11n (38% duty) reached Fair after 295 s and stayed at Fair, never Serious, for 17 minutes.
-  Heat follows Neural Engine duty: no Fair at 31%, Fair after 295 s at 38%, after 117 s at 42% and after 59 s
-  at 72%. The requirement "not staying at Serious" is met by yolov8n and yolo11n; the line falls between
-  38% and 42%.
-- **yolo11n passes but buys little.** +1.3 mAP over yolov8n (+3.6%) for a phone that runs at Fair instead of
-  Nominal and about 6 ms more prediction time in the pipeline. yolov8n at 448x800 has nearly the same load
-  (13.0 vs 12.8 ms) and +2.7 mAP, so it is the better model to test next.
+  27 to 31 ms). yolo11n (38% duty) reached Fair after 295 s and stayed at Fair for 17 minutes, never Serious.
+  yolov8n at 448x800 (39% duty) reached Fair after 558 s and also never Serious in 18 minutes. Neural Engine
+  duty is only a rough guide to heat: yolo11n and yolov8n at 448x800 have almost the same measured latency
+  (12.8 vs 13.0 ms) but very different heat, and YOLO11 leaves more operators on the CPU, which may explain it
+  (not measured). The requirement "not staying at Serious" is met by yolov8n, yolov8n at 448x800 and yolo11n;
+  yolov8s and larger fail it.
+- **yolov8n at 448x800 is the best model that passes.** +2.7 mAP over yolov8n at 352x640 (+7.6%, and +24% on
+  small objects) and it ran cooler than yolo11n, which it beats on accuracy (38.4 vs 37.0). It costs a phone
+  that runs at Fair after about 9 minutes instead of Nominal, and about 7 ms more prediction time in the
+  pipeline. yolo11n is dominated by it.
 - The thermal runs were on a plugged-in phone looking at a static, empty scene, at room temperature. Handheld
   use in warm conditions will run hotter.
 
@@ -164,10 +167,10 @@ where it goes.
    [docs/benchmarks/2026-09-19-iphone-xs-max.txt](docs/benchmarks/2026-09-19-iphone-xs-max.txt)): accuracy
    at different sizes and models, confirming the Neural Engine in Instruments' Core ML template, and the
    TFLite baseline.
-2. **Choose the model.** Only yolov8n (Nominal) and yolo11n (Fair) stay out of Serious for 15 minutes, and
-   yolo11n adds little. yolov8s is 22% more accurate (53% on small objects) and keeps its speed at Serious,
-   but the phone runs hot. Test yolov8n at 448x800 next; thermal step-down (next item) would let yolov8s run
-   at full rate while cool and back off when hot. The default stays `yolov8n_352x640` until this is decided.
+2. **Choose the model.** yolov8n at 448x800 is the most accurate model that stays out of Serious for 15
+   minutes. yolov8s is 22% more accurate than yolov8n (53% on small objects) and keeps its speed at Serious, but
+   the phone runs hot; with thermal step-down it could run at full rate while cool. The default stays
+   `yolov8n_352x640`; pick another in the app's model menu.
 3. **Thermal step-down** (frame rate, then detection frequency, then a smaller model), driven by
    `DeviceConditions`. The yolov8m run shows why: Serious arrives within two minutes of a heavy model.
 4. **Cheaper preprocessing.** vImage takes about 4 ms per frame on the A12, the biggest CPU cost. Asking the
