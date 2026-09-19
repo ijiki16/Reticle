@@ -6,6 +6,8 @@ enum LaunchOptions {
     static let autorunBenchmark = ProcessInfo.processInfo.arguments.contains("-autorun-benchmark")
     /// Write a line of live statistics every second, to the console and to `Documents/live-stats.log`.
     static let logStats = ProcessInfo.processInfo.arguments.contains("-log-stats")
+    /// Turn thermal throttling off, to measure how a model heats the phone on its own.
+    static let noThrottle = ProcessInfo.processInfo.arguments.contains("-no-throttle")
     /// `-model yolov8s_352x640` detects with that bundled model instead of the default.
     static let modelName: String? = UserDefaults.standard.string(forKey: "model")
     /// `-benchmark-filter yolov8m_352x640,yolo11m_352x640` benchmarks only models with these names.

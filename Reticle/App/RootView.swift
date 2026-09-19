@@ -19,6 +19,10 @@ struct RootView: View {
             CameraMessage(state: camera.state, retry: camera.start)
             StatsHUD(rates: camera.rates, detection: detection, conditions: conditions)
         }
+        .overlay(alignment: .bottom) {
+            ModelMenu(detection: detection, sink: camera.sink)
+                .padding(.bottom, 24)
+        }
         .overlay(alignment: .topTrailing) {
             Button {
                 showBenchmark = true
@@ -39,6 +43,7 @@ struct RootView: View {
         .task { await camera.pollStats() }
         .task { await detection.pollStats() }
         .task { await statsLog.run(camera: camera, detection: detection, conditions: conditions) }
+        .task { await detection.throttle(with: conditions, sink: camera.sink) }
         .task {
             // An automatic benchmark run must not compete with the detector for the Neural Engine.
             if !LaunchOptions.autorunBenchmark {
@@ -108,11 +113,45 @@ private struct StatsHUD: View {
             Text(modelName)
             Text(String(format: "pre %.1f  pred %.1f  post %.1f ms", averages.preprocess, averages.predict, averages.postprocess))
             Text(String(format: "e2e %.0f ms  %.0f objects", averages.endToEnd, averages.detections))
+            if detection.throttleLevel > 0 {
+                Text("Hot: detecting 1 in \(ThermalGovernor.strides[detection.throttleLevel]) frames")
+                    .foregroundStyle(.orange)
+            }
             if averages.busyDropsPerSecond >= 0.5 {
                 Text(String(format: "%.0f busy drops/s", averages.busyDropsPerSecond))
                     .foregroundStyle(.yellow)
             }
         }
+    }
+}
+
+/// Switches the detection model. The menu shows each model's accuracy, speed and heat.
+private struct ModelMenu: View {
+    let detection: DetectionController
+    let sink: FrameSink
+
+    var body: some View {
+        Menu {
+            Picker("Model", selection: selection) {
+                ForEach(detection.options) { option in
+                    Text(option.menuTitle).tag(option.name)
+                }
+            }
+        } label: {
+            Label(ModelCatalog.title(for: detection.selectedModel), systemImage: "cpu")
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.black.opacity(0.6), in: Capsule())
+        }
+        .accessibilityLabel("Detection model")
+    }
+
+    private var selection: Binding<String> {
+        Binding(
+            get: { detection.selectedModel },
+            set: { name in Task { await detection.select(name, into: sink) } }
+        )
     }
 }
 

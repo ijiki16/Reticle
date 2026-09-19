@@ -8,7 +8,7 @@ import OSLog
 /// Each frame takes one of a few preallocated slots for its whole trip: preprocess, predict,
 /// decode. When every slot is busy the frame is dropped, never queued, so the pipeline runs at the
 /// speed of the model and latency stays flat.
-final class DetectionPipeline: @unchecked Sendable {
+final class DetectionPipeline: FrameConsumer, @unchecked Sendable {
     struct Configuration: Sendable {
         var confidenceThreshold: Float = 0.25
         var iouThreshold: Float = 0.45

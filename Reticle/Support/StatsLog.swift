@@ -26,9 +26,9 @@ final class StatsLog {
             var modelName = "-"
             if case .ready(let name) = detection.state { modelName = name }
             let line = String(
-                format: "t=%.0f model=%@ thermal=%@ lowpower=%d battery=%@ mem=%.0f cam=%.1f proc=%.1f busy=%.1f pre=%.1f pred=%.1f post=%.1f draw=%.1f e2e=%.0f obj=%.1f",
+                format: "t=%.0f model=%@ thermal=%@ level=%d lowpower=%d battery=%@ mem=%.0f cam=%.1f proc=%.1f busy=%.1f pre=%.1f pred=%.1f post=%.1f draw=%.1f e2e=%.0f obj=%.1f",
                 ProcessInfo.processInfo.systemUptime - start, modelName,
-                conditions.thermalState.name, conditions.isLowPowerMode ? 1 : 0, Self.batteryDescription,
+                conditions.thermalState.name, detection.throttleLevel, conditions.isLowPowerMode ? 1 : 0, Self.batteryDescription,
                 MemoryFootprint.megabytes,
                 camera.rates.framesPerSecond, averages.processedPerSecond, averages.busyDropsPerSecond,
                 averages.preprocess, averages.predict, averages.postprocess, averages.draw,
