@@ -18,6 +18,10 @@ The camera pipeline, the on-device Core ML benchmark and the detector are in pla
   the screen with an aspect-fill transform that is unit tested.
 - **HUD** (sections 5 and 6): fps, per-stage timings, end-to-end latency, thermal state and Low Power Mode,
   refreshed at 2 Hz.
+- **Model menu**: the button at the bottom of the screen switches the detection model while the camera runs. It
+  lists the bundled models with their measured accuracy, speed and heat, and remembers the choice.
+- **Thermal step-down** (section 6): when the phone reaches Serious, detection thins out to every 2nd, 3rd or 6th
+  frame and recovers as it cools. The camera preview keeps its full frame rate. See below.
 - **Signposts** (section 7): `preprocess`, `predict` and `decode` intervals plus a `frame` event, for Instruments.
 - **Scheme "Reticle Benchmark"**: runs the app as a Release build. Use it for every performance number.
 - **Core ML benchmark** (section 7, the speedometer button): see below.
@@ -61,7 +65,8 @@ Launch arguments that help with scripted runs:
 | Argument | Effect |
 | --- | --- |
 | `-log-stats` | Once a second, print and save (`Documents/live-stats.log`) the thermal state, memory, battery, fps and per-stage timings |
-| `-model yolov8s_352x640` | Detect with another bundled model |
+| `-model yolov8s_352x640` | Detect with another bundled model (overrides the menu's remembered choice) |
+| `-no-throttle` | Turn thermal step-down off, to measure a model's heat on its own |
 | `-autorun-benchmark` | Open the benchmark and start it |
 | `-benchmark-filter a,b` | Benchmark only models whose names contain one of these |
 | `-benchmark-units ne` | Benchmark only `.cpuAndNeuralEngine` |
@@ -90,7 +95,7 @@ The name under the home-screen icon is `INFOPLIST_KEY_CFBundleDisplayName` in `p
 | --- | --- |
 | `Reticle/App` | App entry point, root view, the model that bridges the camera to SwiftUI |
 | `Reticle/Camera` | `CameraSession` (capture actor) and `CameraPreview` |
-| `Reticle/Detection` | Model loader, letterbox preprocessing, decoder, NMS, the pipeline and its statistics |
+| `Reticle/Detection` | Model loader and catalogue, letterbox preprocessing, decoder, NMS, the pipeline, its statistics, and the thermal governor |
 | `Reticle/Overlay` | Box overlay view and the aspect-fill mapping |
 | `Reticle/Support` | Frame statistics, thermal and power state, signposts, launch options |
 | `Reticle/Benchmark` | On-device Core ML benchmark: runner, compute-plan summary, report, UI |
@@ -153,6 +158,32 @@ Raw data is in `docs/benchmarks/`.
 - The thermal runs were on a plugged-in phone looking at a static, empty scene, at room temperature. Handheld
   use in warm conditions will run hotter.
 
+### Thermal step-down
+
+`ThermalGovernor` watches `ProcessInfo.thermalState` and Low Power Mode once a second. Level 0 analyses every
+frame; levels 1, 2 and 3 analyse every 2nd, 3rd and 6th (15, 10 and 5 fps at a 30 fps camera).
+
+- Serious goes to level 1 at once, and to level 2 if it lasts 90 s. Critical goes straight to level 3.
+- Recovery is one level at a time, each after 60 s of continuous calm. Fair is enough to ease from level 2 to
+  level 1, but full rate needs Nominal: in the first version Fair was enough, and yolov8m went from Fair
+  straight back to Serious within 48 s of returning to full rate.
+- Low Power Mode never goes above level 1.
+
+Tested on the XS Max with yolov8m, the model that heats fastest (`docs/benchmarks/*throttle*`). Ungoverned it
+reached Serious after 103 s and stayed there.
+
+| Run | Started | Time at Serious | Detections per second (mean) |
+| --- | --- | --- | --- |
+| First version, Fair enough to recover | warm (Fair) | 73% of 963 s | 12.5 |
+| Nominal needed for full rate | cool (Nominal) | 49% of 1025 s | 13.9 |
+
+It works as designed: it reacts within a second, throttles further if Serious persists, recovers step by step,
+and does not bounce back to full rate. But the heat is slow to shed. From Serious it took 4 to 6 minutes at
+10 fps to reach Fair, and even at 15 fps yolov8m went back to Serious after about 6 minutes. So step-down
+roughly halves the time a very heavy model spends at Serious; it does not keep it out. It is aimed at models
+in the yolov8s range, which was not run under the governor. Lowering the camera frame rate and falling back to
+a lighter model are the next levers.
+
 ## Tests
 
 `ReticleTests` runs on the simulator. Besides the unit tests for the letterbox, decoder, NMS, slot pool,
@@ -169,10 +200,10 @@ where it goes.
    TFLite baseline.
 2. **Choose the model.** yolov8n at 448x800 is the most accurate model that stays out of Serious for 15
    minutes. yolov8s is 22% more accurate than yolov8n (53% on small objects) and keeps its speed at Serious, but
-   the phone runs hot; with thermal step-down it could run at full rate while cool. The default stays
-   `yolov8n_352x640`; pick another in the app's model menu.
-3. **Thermal step-down** (frame rate, then detection frequency, then a smaller model), driven by
-   `DeviceConditions`. The yolov8m run shows why: Serious arrives within two minutes of a heavy model.
+   the phone runs hot. The default stays `yolov8n_352x640`; pick another in the model menu.
+3. **Run yolov8s under the thermal governor** for 20 to 30 minutes, to see whether step-down lets it run at full
+   rate while cool and stay out of Serious. Then, if heavier models matter, add the other levers: a lower
+   camera frame rate and an automatic fall-back to a lighter model.
 4. **Cheaper preprocessing.** vImage takes about 4 ms per frame on the A12, the biggest CPU cost. Asking the
    camera output to scale frames in the ISP (through `videoSettings`) would move that work to hardware.
 5. **Input orientation** is settled: the camera delivers upright portrait frames and the model takes 352x640.
