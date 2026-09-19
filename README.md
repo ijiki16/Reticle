@@ -124,3 +124,11 @@ where it goes.
 4. **Cheaper preprocessing.** vImage takes about 4 ms per frame on the A12, the biggest CPU cost. Asking the
    camera output to scale frames in the ISP (through `videoSettings`) would move that work to hardware.
 5. **Input orientation** is settled: the camera delivers upright portrait frames and the model takes 352x640.
+
+## License
+
+Reticle is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+
+The detector uses YOLOv8 models exported with Ultralytics, which are AGPL-3.0. Distributing the app with
+those weights therefore means distributing it under AGPL-3.0 as well, with the source available. If you
+ever swap in a differently licensed model, revisit this.
