@@ -16,3 +16,8 @@ Config/Local.xcconfig
 # Swift Package Manager
 .build/
 .swiftpm/
+
+# Exported Core ML models and downloaded weights. Ultralytics models are AGPL-3.0, so keep them out
+# of git until the licence decision is made (docs/REQUIREMENTS.md, open decision 2).
+Reticle/Models/
+*.pt

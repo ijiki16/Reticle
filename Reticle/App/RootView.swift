@@ -3,6 +3,8 @@ import SwiftUI
 struct RootView: View {
     @State private var camera = CameraModel()
     @State private var conditions = DeviceConditions()
+    @State private var benchmark = BenchmarkModel()
+    @State private var showBenchmark = LaunchOptions.autorunBenchmark
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -13,19 +15,38 @@ struct RootView: View {
             CameraMessage(state: camera.state, retry: camera.start)
             StatsHUD(rates: camera.rates, conditions: conditions)
         }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                showBenchmark = true
+            } label: {
+                Image(systemName: "speedometer")
+                    .padding(10)
+                    .background(.black.opacity(0.6), in: Circle())
+            }
+            .padding()
+            .accessibilityLabel("Benchmark")
+        }
+        .fullScreenCover(isPresented: $showBenchmark) {
+            BenchmarkView(model: benchmark)
+                .preferredColorScheme(.dark)
+        }
         .preferredColorScheme(.dark)
         .task { await camera.observeState() }
         .task { await camera.pollStats() }
-        .onChange(of: scenePhase, initial: true) { _, phase in
-            if phase == .active {
-                camera.start()
-            } else {
-                camera.stop()
-            }
-        }
+        .onChange(of: scenePhase, initial: true) { _, _ in updateCameraRunning() }
+        // The benchmark needs the Neural Engine and CPU to itself, so the camera pauses behind it.
+        .onChange(of: showBenchmark) { _, _ in updateCameraRunning() }
         .onChange(of: camera.state) { _, state in
             // Keep the screen awake only while the camera is running.
             UIApplication.shared.isIdleTimerDisabled = state == .running
+        }
+    }
+
+    private func updateCameraRunning() {
+        if scenePhase == .active && !showBenchmark {
+            camera.start()
+        } else {
+            camera.stop()
         }
     }
 }
