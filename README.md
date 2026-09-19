@@ -56,6 +56,19 @@ xcrun devicectl device copy from --device <id> --domain-type appDataContainer \
 
 Rows marked `*` started or ended at a Serious thermal state and should not be compared.
 
+Launch arguments that help with scripted runs:
+
+| Argument | Effect |
+| --- | --- |
+| `-log-stats` | Once a second, print and save (`Documents/live-stats.log`) the thermal state, memory, battery, fps and per-stage timings |
+| `-model yolov8s_352x640` | Detect with another bundled model |
+| `-autorun-benchmark` | Open the benchmark and start it |
+| `-benchmark-filter a,b` | Benchmark only models whose names contain one of these |
+| `-benchmark-units ne` | Benchmark only `.cpuAndNeuralEngine` |
+
+`uv run Tools/evaluate_accuracy.py --images 1000` scores the exported models on COCO val2017 (it downloads
+only the images it needs).
+
 ## Setup
 
 ```sh
@@ -82,7 +95,7 @@ The name under the home-screen icon is `INFOPLIST_KEY_CFBundleDisplayName` in `p
 | `Reticle/Support` | Frame statistics, thermal and power state, signposts, launch options |
 | `Reticle/Benchmark` | On-device Core ML benchmark: runner, compute-plan summary, report, UI |
 | `Reticle/Models` | Exported Core ML models (git-ignored) |
-| `Tools` | `export_models.py`, which produces the benchmark models |
+| `Tools` | `export_models.py` (the benchmark models) and `evaluate_accuracy.py` (COCO mAP) |
 | `ReticleTests` | Unit tests (Swift Testing) |
 | `Config` | Signing settings; your team lives in the git-ignored `Local.xcconfig` |
 
@@ -103,6 +116,34 @@ From the Core ML benchmark on the XS Max (raw numbers in
 - **Output is float32.** The model computes in fp16, but Core ML casts its output tensor to float32, and the
   decoder reads that.
 
+### Bigger or better models
+
+Accuracy is COCO mAP on the first 1000 val2017 images (`Tools/evaluate_accuracy.py`, landscape 640x352 as a
+proxy for the portrait model). Latency is the on-device Neural Engine p50 with one prediction in flight.
+"Neural Engine duty" is that latency times 30, the share of each second the model needs at 30 fps.
+Raw data is in `docs/benchmarks/`.
+
+| Model | mAP50-95 | Small-object mAP | p50 latency | Neural Engine duty at 30 fps | 15-minute thermal run |
+| --- | --- | --- | --- | --- | --- |
+| yolov8n 352x640 (current) | 35.7 | 14.6 | 10.2 ms | 31% | **Pass**: Nominal the whole time |
+| yolov8n 448x800 | 38.4 | 18.1 | 13.0 ms | 39% | not run |
+| yolov8s 352x640 | 43.5 | 22.3 | 13.9 ms | 42% | **Fail on temperature**: Fair at 117 s, Serious at 418 s and stayed. Speed held: 30 fps, no drops |
+| yolo11s 352x640 | 45.4 | 25.6 | 17.3 ms | 52% | not run |
+| yolov8s 448x800 | 46.9 | 27.6 | 20.2 ms | 61% | not run |
+| yolov8m 352x640 | 49.5 | 28.5 | 24.1 ms | 72% | **Fail**: Serious after 103 s, stopped at 308 s |
+| yolo11m 352x640 | 50.2 | 29.5 | 38.3 ms | 115% | cannot sustain 30 fps |
+
+- **yolov8s is the best value.** +7.8 mAP over yolov8n (+22%, and +53% on small objects) for 3.7 ms. A larger
+  input for yolov8n buys less (+2.7 mAP for 2.8 ms), and YOLO11 costs more per point than YOLOv8.
+- **Thermals set the ceiling, not latency.** yolov8n held Nominal for 16.7 minutes with flat memory and
+  prediction time. yolov8s (42% duty) reached Fair after 2 minutes and Serious after 7, and stayed there for
+  the rest of a 16-minute run, but its speed did not suffer: 22 ms prediction and 30 fps in every thermal
+  state, no dropped frames. yolov8m (72% duty) reached Serious after 100 s and did get throttled (prediction
+  27 to 31 ms). So the requirement "not staying at Serious" is met only by yolov8n so far; where between 31% and
+  42% duty the phone stops staying cool was not measured.
+- The thermal runs were on a plugged-in phone looking at a static, empty scene, at room temperature. Handheld
+  use in warm conditions will run hotter.
+
 ## Tests
 
 `ReticleTests` runs on the simulator. Besides the unit tests for the letterbox, decoder, NMS, slot pool,
@@ -117,10 +158,12 @@ where it goes.
    [docs/benchmarks/2026-09-19-iphone-xs-max.txt](docs/benchmarks/2026-09-19-iphone-xs-max.txt)): accuracy
    at different sizes and models, confirming the Neural Engine in Instruments' Core ML template, and the
    TFLite baseline.
-2. **15-minute thermal run** at 30 fps (requirements, section 6): sustained detection without staying at
-   Serious, and steady memory.
+2. **Choose between yolov8n and yolov8s.** yolov8n stays cool; yolov8s is 22% more accurate (53% on small
+   objects) and keeps its speed at Serious, but the phone runs hot. Thermal step-down (next item) would let
+   yolov8s run at full rate while cool and back off when hot. The default stays `yolov8n_352x640` until this is
+   decided.
 3. **Thermal step-down** (frame rate, then detection frequency, then a smaller model), driven by
-   `DeviceConditions`.
+   `DeviceConditions`. The yolov8m run shows why: Serious arrives within two minutes of a heavy model.
 4. **Cheaper preprocessing.** vImage takes about 4 ms per frame on the A12, the biggest CPU cost. Asking the
    camera output to scale frames in the ISP (through `videoSettings`) would move that work to hardware.
 5. **Input orientation** is settled: the camera delivers upright portrait frames and the model takes 352x640.
