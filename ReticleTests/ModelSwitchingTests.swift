@@ -63,21 +63,36 @@ struct ThermalGovernorTests {
         _ = governor.update(thermalState: .serious, lowPowerMode: false, at: 90)
         #expect(governor.level == 2)
 
+        // Fair is calm enough to ease from level 2 to level 1...
         #expect(governor.update(thermalState: .fair, lowPowerMode: false, at: 100) == 2)
         #expect(governor.update(thermalState: .fair, lowPowerMode: false, at: 159) == 2)
         #expect(governor.update(thermalState: .fair, lowPowerMode: false, at: 160) == 1)
-        #expect(governor.update(thermalState: .nominal, lowPowerMode: false, at: 219) == 1)
-        #expect(governor.update(thermalState: .nominal, lowPowerMode: false, at: 220) == 0)
+        // ...but no further, however long it lasts.
+        #expect(governor.update(thermalState: .fair, lowPowerMode: false, at: 500) == 1)
+
+        // Full rate needs a Nominal phone, continuously, for the recovery time.
+        #expect(governor.update(thermalState: .nominal, lowPowerMode: false, at: 600) == 1)
+        #expect(governor.update(thermalState: .nominal, lowPowerMode: false, at: 659) == 1)
+        #expect(governor.update(thermalState: .nominal, lowPowerMode: false, at: 660) == 0)
     }
 
-    @Test mutating func aHotSpellRestartsTheRecoveryClock() {
+    @Test mutating func fairIsNotCoolEnoughForFullRate() {
         _ = governor.update(thermalState: .serious, lowPowerMode: false, at: 0)
-        _ = governor.update(thermalState: .fair, lowPowerMode: false, at: 10)
-        _ = governor.update(thermalState: .serious, lowPowerMode: false, at: 50)
 
-        _ = governor.update(thermalState: .fair, lowPowerMode: false, at: 60)
-        #expect(governor.update(thermalState: .fair, lowPowerMode: false, at: 119) == 1)
-        #expect(governor.update(thermalState: .fair, lowPowerMode: false, at: 120) == 0)
+        for second in stride(from: 100, through: 1000, by: 100) {
+            #expect(governor.update(thermalState: .fair, lowPowerMode: false, at: Double(second)) == 1)
+        }
+    }
+
+    @Test mutating func aWarmSpellRestartsTheRecoveryClock() {
+        _ = governor.update(thermalState: .serious, lowPowerMode: false, at: 0)
+        _ = governor.update(thermalState: .nominal, lowPowerMode: false, at: 10)
+        // Only Fair for a moment, so the 60 s of Nominal starts over.
+        _ = governor.update(thermalState: .fair, lowPowerMode: false, at: 50)
+
+        _ = governor.update(thermalState: .nominal, lowPowerMode: false, at: 60)
+        #expect(governor.update(thermalState: .nominal, lowPowerMode: false, at: 119) == 1)
+        #expect(governor.update(thermalState: .nominal, lowPowerMode: false, at: 120) == 0)
     }
 
     @Test mutating func stepsDownFromCriticalOnceItEases() {

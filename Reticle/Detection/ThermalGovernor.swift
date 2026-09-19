@@ -11,8 +11,10 @@ import Foundation
 ///
 /// - Serious steps down to level 1 at once, and to level 2 if it lasts `escalateAfter`.
 /// - Critical goes straight to the top level.
-/// - Fair and Nominal step back up one level at a time, each after `recoverAfter` of being cool, so the
-///   app does not flap between rates.
+/// - Recovery is one level at a time, each after `recoverAfter` of continuous calm, so the app does not
+///   flap between rates. Fair is enough to ease from level 2 to level 1, but full rate needs Nominal:
+///   at Fair the phone is still warm, and on the XS Max a heavy model went straight from Fair back to
+///   Serious within a minute of returning to full rate.
 /// - Low Power Mode never goes above level 1.
 struct ThermalGovernor {
     /// Camera frames per analysed frame, for each level.
@@ -46,12 +48,14 @@ struct ThermalGovernor {
                 move(to: Self.topLevel - 1, at: now)
             }
         default: // Nominal or Fair
-            if level > floor {
+            // Only a Nominal phone is cool enough for full rate; Fair can go no lower than level 1.
+            let lowest = thermalState == .nominal ? floor : max(floor, 1)
+            if level > lowest {
                 let since = coolSince ?? now
                 coolSince = since
                 if now - since >= recoverAfter {
                     move(to: level - 1, at: now)
-                    coolSince = now
+                    coolSince = nil
                 }
             } else {
                 coolSince = nil
