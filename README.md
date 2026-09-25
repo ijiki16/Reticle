@@ -1,7 +1,8 @@
 # Reticle
 
-Real-time object detection for the iPhone XS Max (iOS 18). The full plan is in
-[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
+Real-time object detection for the iPhone XS Max (iOS 18), the app's primary target. The full plan is in
+[docs/REQUIREMENTS.md](docs/REQUIREMENTS.md). It has also been benchmarked on an iPhone 17 (see
+[Cross-device: iPhone 17](#cross-device-iphone-17)) to see how much headroom a current phone has.
 
 ## Where it stands
 
@@ -29,7 +30,8 @@ The camera pipeline, the on-device Core ML benchmark and the detector are in pla
 Live on the XS Max the detector keeps up with the 30 fps camera with no drops, in about 4 ms of
 preprocessing, 14 ms of prediction and 0.5 ms of decoding, and 40 ms from camera to boxes drawn. Numbers
 are in [docs/benchmarks/2026-09-19-live-pipeline-xs-max.txt](docs/benchmarks/2026-09-19-live-pipeline-xs-max.txt).
-To watch them from a Mac, launch with `-log-stats`:
+On an iPhone 17 the same default model predicts in about 7 ms and end-to-end latency is 28 ms; see
+[Cross-device: iPhone 17](#cross-device-iphone-17). To watch the live numbers from a Mac, launch with `-log-stats`:
 
 ```sh
 xcrun devicectl device process launch --device <id> --console --terminate-existing \
@@ -158,6 +160,39 @@ Raw data is in `docs/benchmarks/`.
 - The thermal runs were on a plugged-in phone looking at a static, empty scene, at room temperature. Handheld
   use in warm conditions will run hotter.
 
+### Cross-device: iPhone 17
+
+The requirements target the XS Max, but the full Core ML benchmark (52 cases: 13 models x 4 compute-unit
+settings) and two 15-minute thermal runs were repeated on an iPhone 17 (A19, iOS 26.7) to see how the choices
+above hold up on current hardware. Raw data is in `docs/benchmarks/2026-09-25-*`.
+
+| Model (352x640, `.cpuAndNeuralEngine`) | XS Max p50 | iPhone 17 p50 | Speedup |
+| --- | --- | --- | --- |
+| yolov8n | 10.2 ms | 2.8 ms | 3.6x |
+| yolov8s | 13.9 ms | 4.0 ms | 3.5x |
+| yolov8m | 24.1 ms | 7.5 ms | 3.2x |
+| yolo11m | 38.3 ms (can't sustain 30 fps) | 9.9 ms | 3.9x |
+
+- **`.all` stopped being the slow choice.** On the XS Max `.all` was 2.6-4x slower than `.cpuAndNeuralEngine`
+  because it pushed the detection head to the GPU. On the iPhone 17 the two are within noise of each other
+  (yolov8n: 2.8 ms both), so this device's scheduler is not making that tradeoff. `.cpuAndNeuralEngine` is
+  still the deliberate choice; this is a difference to recheck if a future device is added.
+- **Every model in the catalogue fits the frame budget.** Even yolo11m, the largest and most accurate model
+  (50.2 mAP), predicts in 9.9 ms, under a third of a 33 ms frame at 30 fps.
+- **Both 15-minute thermal runs passed, one trivially.** yolov8n (the default) ran 15.5 minutes with no
+  drops, ending cooler than it started (Fair to Nominal). yolo11m, the heaviest model, ran 15.4 minutes at
+  **Nominal thermal state throughout**, something no model managed on the XS Max. End-to-end latency was 27.6 ms
+  for yolov8n and 36.5 ms for yolo11m, against 39-40 ms for yolov8n on the XS Max.
+- **Caveats:** the yolov8n run started at Fair (warm from the benchmark just before it), and Low Power Mode was
+  on for the first 727 of 899 s (it switched off on its own, likely once the charging phone passed 80%); the
+  run still held 30 fps throughout and cooled to Nominal before LPM turned off. Accuracy (mAP) was not
+  re-measured per device, since it comes from the Python/coremltools decode and does not depend on which phone
+  ran it.
+- **What this means:** on an iPhone 17, model choice is not thermally constrained the way it is on the XS Max.
+  `yolo11m`, the most accurate model in the catalogue, costs nothing in heat here. The app does not yet pick a
+  model by device, so the default stays `yolov8n_352x640` everywhere; a device-aware default (or just telling
+  iPhone 17 users to pick yolo11m from the model menu) is a product decision, not made here.
+
 ### Thermal step-down
 
 `ThermalGovernor` watches `ProcessInfo.thermalState` and Low Power Mode once a second. Level 0 analyses every
@@ -198,15 +233,21 @@ where it goes.
    [docs/benchmarks/2026-09-19-iphone-xs-max.txt](docs/benchmarks/2026-09-19-iphone-xs-max.txt)): accuracy
    at different sizes and models, confirming the Neural Engine in Instruments' Core ML template, and the
    TFLite baseline.
-2. **Choose the model.** yolov8n at 448x800 is the most accurate model that stays out of Serious for 15
-   minutes. yolov8s is 22% more accurate than yolov8n (53% on small objects) and keeps its speed at Serious, but
-   the phone runs hot. The default stays `yolov8n_352x640`; pick another in the model menu.
-3. **Run yolov8s under the thermal governor** for 20 to 30 minutes, to see whether step-down lets it run at full
-   rate while cool and stay out of Serious. Then, if heavier models matter, add the other levers: a lower
-   camera frame rate and an automatic fall-back to a lighter model.
-4. **Cheaper preprocessing.** vImage takes about 4 ms per frame on the A12, the biggest CPU cost. Asking the
-   camera output to scale frames in the ISP (through `videoSettings`) would move that work to hardware.
-5. **Input orientation** is settled: the camera delivers upright portrait frames and the model takes 352x640.
+2. **Choose the model for the XS Max.** yolov8n at 448x800 is the most accurate model that stays out of
+   Serious for 15 minutes on that device. yolov8s is 22% more accurate than yolov8n (53% on small objects) and
+   keeps its speed at Serious, but the phone runs hot. The default stays `yolov8n_352x640`; pick another in the
+   model menu.
+3. **Run yolov8s under the thermal governor** on the XS Max for 20 to 30 minutes, to see whether step-down lets
+   it run at full rate while cool and stay out of Serious. Then, if heavier models matter there, add the other
+   levers: a lower camera frame rate and an automatic fall-back to a lighter model.
+4. **Decide whether the default model should depend on the device.** On the iPhone 17, yolo11m (the most
+   accurate model) ran a full 15 minutes at Nominal, so the XS Max's thermal ceiling does not apply there. A
+   simple `ProcessInfo.processInfo.machine`-based default, or just pointing newer-phone users at the model
+   menu, are both options; neither is built yet.
+5. **Cheaper preprocessing.** vImage takes about 4 ms per frame on the A12 (3-4 ms on the A19 too, so it is not
+   Neural-Engine-bound). Asking the camera output to scale frames in the ISP (through `videoSettings`) would
+   move that work to hardware.
+6. **Input orientation** is settled: the camera delivers upright portrait frames and the model takes 352x640.
 
 ## License
 
